@@ -2,6 +2,7 @@ import streamlit as st
 
 from src.plagiarism_engine import PlagiarismEngine
 from src.text_utils import extract_text_from_upload
+from src.batch_processor import BatchProcessor, BatchComparison
 
 st.set_page_config(page_title='AI Plagiarism Detector', layout='wide')
 st.markdown(
@@ -54,9 +55,9 @@ def highlight_overlap_html(query_text: str, candidate_text: str):
 
 with st.sidebar:
     st.header('Settings')
-    threshold = st.slider('Flagging threshold (cosine similarity)', 0.30, 0.95, 0.75, 0.01)
+    threshold = st.slider('Flagging threshold (similarity score)', 0.1, 0.95, 0.3, 0.05)
     top_k = st.slider('Top matches to show', 3, 40, 12)
-    st.caption('OCR is disabled. PDFs must contain selectable text.')
+    st.caption('Algorithm: Jaccard + LCS (60% token overlap, 40% sequence matching)')
 
 try:
     engine = get_engine()
@@ -65,7 +66,7 @@ except Exception as e:
     st.exception(e)
     st.stop()
 
-tab1, tab2, tab3 = st.tabs(['Database Management', 'Plagiarism Check', 'Database Status'])
+tab1, tab2, tab3, tab4 = st.tabs(['Database Management', 'Plagiarism Check', 'Batch Processing', 'Database Status'])
 
 with tab1:
     st.subheader('1) Upload reference assignments (corpus)')
@@ -209,6 +210,135 @@ with tab2:
                 st.write('No document had matches above your threshold.')
 
 with tab3:
+    st.subheader('Batch Processing')
+    st.caption('Upload a ZIP file containing all submissions with names: (roll_no)_A(assignment_no).txt\nExample: 001_A1.txt, 002_A1.txt, etc.')
+    
+    batch_processor = BatchProcessor()
+    batch_comparison = BatchComparison()
+    
+    assignment_no_batch = st.number_input('Assignment number for all submissions in ZIP:', min_value=1, step=1, value=1, key='batch_assignment')
+    similarity_threshold = st.slider('Plagiarism detection threshold (for final report)', 0.1, 0.95, 0.3, 0.05)
+    
+    # Duplicate handling options
+    col_dup1, col_dup2 = st.columns(2)
+    with col_dup1:
+        duplicate_action = st.radio(
+            'If files already exist in database:',
+            options=['Skip duplicates', 'Replace duplicates'],
+            help='Skip: Keep existing files. Replace: Delete and re-ingest.'
+        )
+    with col_dup2:
+        st.info(f"📋 **Tip**: Check duplicates first to see what exists.", icon="ℹ️")
+    
+    st.divider()
+    
+    zip_file = st.file_uploader('Upload ZIP file with submissions', type=['zip'], key='batch_zip')
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        check_dups_btn = st.button('Check for duplicates', key='check_duplicates_btn')
+    with col_btn2:
+        process_btn = st.button('Process ZIP file', type='primary', key='process_zip')
+    
+    if check_dups_btn:
+        if not zip_file:
+            st.warning('Please upload a ZIP file first.')
+        else:
+            with st.spinner('Checking for duplicates...'):
+                try:
+                    zip_bytes = zip_file.getvalue()
+                    files = batch_processor.extract_files_from_zip(zip_bytes)
+                    
+                    if not files:
+                        st.error('No valid files found in ZIP.')
+                    else:
+                        existing = batch_processor._get_existing_documents_by_assignment(files)
+                        if existing:
+                            st.warning(f"⚠️ Found {len(existing)} file(s) already in database for assignment {assignment_no_batch}:")
+                            for filename in existing.keys():
+                                st.write(f"  • {filename}")
+                            st.info(f"If you proceed with '{duplicate_action}', these will be handled accordingly.", icon="ℹ️")
+                        else:
+                            st.success(f"✅ No duplicates found. All {len(files)} files are new.")
+                except Exception as e:
+                    st.error(f'Error checking duplicates: {str(e)}')
+    
+    if process_btn:
+        if not zip_file:
+            st.warning('Please upload a ZIP file.')
+        else:
+            with st.spinner('Extracting and processing files...'):
+                try:
+                    # Extract files from ZIP
+                    zip_bytes = zip_file.getvalue()
+                    files = batch_processor.extract_files_from_zip(zip_bytes)
+                    
+                    if not files:
+                        st.error('No valid files found in ZIP. Ensure files follow format: (roll_no)_A(assignment_no).txt')
+                        st.stop()
+                    
+                    # Ingest files to database with duplicate handling
+                    skip_dups = (duplicate_action == 'Skip duplicates')
+                    ingestion_result = batch_processor.ingest_files_to_db(files, skip_duplicates=skip_dups)
+                    
+                    # Display ingestion results
+                    if ingestion_result['total_duplicates'] > 0:
+                        st.warning(f"⚠️ Skipped {ingestion_result['total_duplicates']} duplicate file(s)")
+                        with st.expander('Duplicate Files', expanded=False):
+                            for dup in ingestion_result['duplicates']:
+                                st.write(f"  • {dup['filename']} (student {dup['roll_no']})")
+                    
+                    if ingestion_result['total_ingested'] > 0:
+                        st.success(f"✅ Ingested {ingestion_result['total_ingested']} file(s)")
+                        with st.expander('Ingestion Details', expanded=True):
+                            st.dataframe(ingestion_result['ingested'], use_container_width=True)
+                    else:
+                        st.info("ℹ️ No new files to ingest (all were duplicates or failed)")
+                    
+                    if ingestion_result['total_failed'] > 0:
+                        st.warning(f"⚠️ Failed to ingest {ingestion_result['total_failed']} file(s)")
+                        with st.expander('Failed Files'):
+                            for item in ingestion_result['failed']:
+                                st.write(f"❌ {item['filename']}: {item['error']}")
+                    
+                    st.divider()
+                    
+                    # Only run comparison if we have ingested files
+                    if ingestion_result['total_ingested'] > 0:
+                        # Run pairwise comparison across all documents in the assignment
+                        st.subheader('Pairwise Plagiarism Comparison')
+                        st.caption(f'Comparing all submissions in Assignment {assignment_no_batch} against each other...')
+                        
+                        with st.spinner('Comparing all file pairs...'):
+                            comparisons = batch_comparison.compare_all_pairs(assignment_no_batch, threshold=similarity_threshold)
+                        
+                        if comparisons:
+                            st.success(f"Found {len(comparisons)} potential plagiarism match(es)")
+                            
+                            # Display comparisons
+                            for idx, comp in enumerate(comparisons, 1):
+                                sim_pct = int(comp['similarity'] * 100)
+                                flagged = comp['flagged']
+                                
+                                with st.container(border=True):
+                                    col1, col2, col3 = st.columns([2, 1, 1])
+                                    with col1:
+                                        risk_level = "🔴 HIGH RISK" if flagged else "🟡 MEDIUM RISK"
+                                        st.write(f"**Match {idx}**: {comp['document_1']} ↔ {comp['document_2']}")
+                                        st.caption(f"{risk_level}")
+                                    with col2:
+                                        st.metric('Similarity', f"{comp['similarity']:.1%}")
+                                    with col3:
+                                        st.progress(min(sim_pct, 100) / 100, text=f"{sim_pct}%")
+                        else:
+                            st.info(f'✅ No plagiarism detected above {similarity_threshold:.0%} threshold in Assignment {assignment_no_batch}.')
+                    else:
+                        st.info("⏭️ Skipped comparison (no new files were ingested)")
+                
+                except Exception as e:
+                    st.error(f'Error processing ZIP file: {str(e)}')
+
+with tab4:
     st.subheader('Corpus overview')
     docs = engine.list_documents()
     if docs:

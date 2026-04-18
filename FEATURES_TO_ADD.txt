@@ -1,3 +1,11 @@
+COMPLETED FEATURES:
+- [✓] Batch processing with ZIP file upload (Assignment format: roll_no_A#)
+- [✓] Automatic file extraction and validation
+- [✓] Automatic database ingestion (parses metadata from filenames)
+- [✓] All-to-All pairwise plagiarism comparison
+- [✓] Multi-algorithm similarity detection (Jaccard + LCS)
+
+ORIGINAL FEATURES TO ADD:
 1. currently it recalculates all the vectors for all the
 assignments(new as well as those stored in the corpus) 
 we have to store the vectors once they are created.
