@@ -330,6 +330,24 @@ with tab3:
                                         st.metric('Similarity', f"{comp['similarity']:.1%}")
                                     with col3:
                                         st.progress(min(sim_pct, 100) / 100, text=f"{sim_pct}%")
+                                    
+                                    # Show matched chunks
+                                    if comp.get('matched_chunks'):
+                                        st.divider()
+                                        st.markdown(f"**Matched chunks ({len(comp['matched_chunks'])} shown)**")
+                                        
+                                        for chunk_idx, chunk_match in enumerate(comp['matched_chunks'], 1):
+                                            with st.expander(f"Chunk {chunk_idx} - Similarity: {chunk_match['similarity']:.1%}", expanded=False):
+                                                chunk_left, chunk_right = st.columns(2)
+                                                with chunk_left:
+                                                    st.markdown(f"**{comp['document_1'].rsplit(' ', 1)[0]}**")
+                                                    st.text(chunk_match['chunk_1'])
+                                                with chunk_right:
+                                                    st.markdown(f"**{comp['document_2'].rsplit(' ', 1)[0]}**")
+                                                    st.markdown(
+                                                        highlight_overlap_html(chunk_match['chunk_1'], chunk_match['chunk_2']),
+                                                        unsafe_allow_html=True,
+                                                    )
                         else:
                             st.info(f'✅ No plagiarism detected above {similarity_threshold:.0%} threshold in Assignment {assignment_no_batch}.')
                     else:

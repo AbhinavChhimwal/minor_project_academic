@@ -286,11 +286,18 @@ class BatchComparison:
         self.batch_processor = BatchProcessor(db_path)
         self.db_path = db_path
 
-    def compare_all_pairs(self, assignment_no: int, threshold: float = 0.3) -> List[Dict]:
+    def compare_all_pairs(self, assignment_no: int, threshold: float = 0.3, top_k: int = 3) -> List[Dict]:
         """
         Compare all documents in an assignment against each other.
-        Returns list of comparison results above threshold.
+        Returns list of comparison results above threshold with matched chunks.
+        
+        Args:
+            assignment_no: Assignment number to compare documents for
+            threshold: Similarity threshold (0.0-1.0)
+            top_k: Number of top matching chunks to return per document pair
         """
+        from .text_utils import split_into_chunks
+        
         documents = self.batch_processor.get_all_documents_by_assignment(assignment_no)
         
         if len(documents) < 2:
@@ -312,11 +319,43 @@ class BatchComparison:
                 similarity = PairwiseSimilarity.combined_similarity(text1, text2)
                 
                 if similarity >= threshold:
+                    # Find matched chunks between the two documents
+                    chunks1 = split_into_chunks(text1)
+                    chunks2 = split_into_chunks(text2)
+                    
+                    matched_chunks = []
+                    if chunks1 and chunks2:
+                        # Calculate similarity for each chunk pair
+                        chunk_similarities = []
+                        for c1 in chunks1:
+                            for c2 in chunks2:
+                                chunk_sim = PairwiseSimilarity.combined_similarity(c1, c2)
+                                chunk_similarities.append({
+                                    "chunk1": c1,
+                                    "chunk2": c2,
+                                    "similarity": chunk_sim,
+                                })
+                        
+                        # Sort by similarity and return top_k
+                        chunk_similarities.sort(key=lambda x: x["similarity"], reverse=True)
+                        matched_chunks = [
+                            {
+                                "chunk_1": cs["chunk1"],
+                                "chunk_2": cs["chunk2"],
+                                "similarity": cs["similarity"]
+                            }
+                            for cs in chunk_similarities[:top_k]
+                        ]
+                    
                     comparisons.append({
                         "document_1": f"{doc1['roll_no']} (A{doc1['assignment_no']})",
                         "document_2": f"{doc2['roll_no']} (A{doc2['assignment_no']})",
+                        "document_1_name": doc1['filename'],
+                        "document_2_name": doc2['filename'],
                         "similarity": similarity,
                         "flagged": similarity >= 0.7,  # High risk if >= 0.7
+                        "matched_chunks": matched_chunks,
+                        "chunk_count": len(matched_chunks),
                     })
         
         comparisons.sort(key=lambda x: x["similarity"], reverse=True)
