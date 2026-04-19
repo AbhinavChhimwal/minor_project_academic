@@ -6,14 +6,29 @@ COMPLETED FEATURES:
 - [✓] Multi-algorithm similarity detection (Jaccard + LCS)
 
 ORIGINAL FEATURES TO ADD:
-1. currently it recalculates all the vectors for all the
-assignments(new as well as those stored in the corpus) 
-we have to store the vectors once they are created.
+1. currently it compares the each assignment with every other assignment
+and does not store anything. this is not good, as it will
+take more time as the number of assignments grows.
+WE WILL HAVE TO THINK OF A DATA STORAGE IDEA DEPENDING ON WHETERH WE WANT TO 
+IMPLEMENT THIS FOR OUR COLLEGE OR MAKE IT AS A PROPER SAAS PRODUCT.
 
 2. taking from point 1 , we have to maintain a database.
 
-3. we are currently only checking for similarity in the chunks,
+3. we are currently only checking for similarity in the text,
 we do not check for semantic similarity .
 for that we will have to use NLP.
 
 4. optional dark mode functionality can also be added.
+
+5. NOW WE WILL BE WORKING ON THE OCR THING.
+
+
+
+
+
+MORE FEATURES :
+
+1. BLOOM FILTERS
+    ek alag submission ke liye jaise hi koi file threshold se upar gayi
+    to fir ab sirf us matched file se similar files se chekc karo.
+    
