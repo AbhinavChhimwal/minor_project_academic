@@ -15,7 +15,7 @@ st.markdown(
       .risk-high { color: #fb7185; }
     </style>
     <div class="hero-title">AI Assignment Plagiarism Checker</div>
-    <div class="pill">Upload reference assignments, then check a submission instantly.</div>
+    <div class="pill">Upload reference z, then check a submission instantly.</div>
     """,
     unsafe_allow_html=True,
 )
@@ -24,6 +24,10 @@ st.markdown(
 @st.cache_resource
 def get_engine():
     return PlagiarismEngine()
+
+if 'engine' not in st.session_state:
+    st.session_state.engine = PlagiarismEngine()
+engine = st.session_state.engine
 
 import re
 import html
